@@ -1,10 +1,12 @@
+import csv
+import os
+import re
+
 import gspread
 from googleapiclient.discovery import build
+from gspread.exceptions import SpreadsheetNotFound
 from httplib2 import Http
 from oauth2client import file, client, tools
-import re
-import os
-import csv
 
 SCOPES = [
     'https://www.googleapis.com/auth/gmail.readonly',
@@ -12,16 +14,26 @@ SCOPES = [
     'https://www.googleapis.com/auth/drive',
 ]
 
+
 class GmailScraper():
+
     def insert_data_into_google_sheet(self, values):
+        file_name = 'Gmail_Data'
         gc = gspread.oauth(
             credentials_filename='credentials.json',
             authorized_user_filename='token.json'
         )
+        try:
+            worksheet = gc.open(file_name).sheet1
+            worksheet.append_rows(values)
 
-        # Open a sheet from a spreadsheet in one go
-        wks = gc.open("data").sheet1
-        wks.append_row(values)
+        except SpreadsheetNotFound as e:
+            print("Spread SHeet Not Found", e)
+            # Create A New Spreadsheet
+            sh = gc.create(file_name)
+            worksheet = sh.sheet1
+            worksheet.append_row(['Employee_id', 'date', 'body'])
+            worksheet.append_rows(values)
 
     def insert_data_into_csv(self, item):
         filename = 'data.csv'
@@ -32,12 +44,12 @@ class GmailScraper():
             writer = csv.DictWriter(csvfile, delimiter=',',
                                     lineterminator='\n',
                                     fieldnames=headers)
-
             if not file_exists:
                 writer.writeheader()  # file doesn't exist yet, write a header
             writer.writerow(item)
 
     def parse_emails(self):
+        values = []
         store = file.Storage('token.json')
         creds = store.get()
         if not creds or creds.invalid:
@@ -61,7 +73,7 @@ class GmailScraper():
                     if 'Subject' in header['name']:
                         item = dict()
                         subject = header['value']
-                        match = re.search(r"[a-zA-Z]+[ -]?(\d[\d-]+)",subject)
+                        match = re.search(r"[a-zA-Z]+[ -]?(\d[\d-]+)", subject)
                         if match:
                             employee_id = match.group(1)
                     if 'Date' in header['name']:
@@ -69,15 +81,15 @@ class GmailScraper():
                 if employee_id:
                     body = msg['snippet']
                     item = dict(
-                        employee_id=employee_id,
+                        empployee_id=employee_id,
                         date=date,
                         body=body
                     )
                     # insert data into csv file
                     self.insert_data_into_csv(item)
                     # insert data into  Google Sheet
-                    values = [employee_id, date, body]
-                    self.insert_data_into_google_sheet(values)
+                    values.append([employee_id, date, body])
+            self.insert_data_into_google_sheet(values)
 
 
 gs = GmailScraper()
